@@ -17,7 +17,6 @@ class CaseDetailController: UICollectionViewController, UICollectionViewDelegate
     let searchCount = 300 //TODO change to 300
     var caseTypeMap: [String: String] = [:] //key: number, value: type
     var caseStatusMap: [String: String] = [:] //key: number, value: status
-    static let formatter = DateFormatter()
     var pieChartView = PieChartView()
     var textview = UITextView()
     let statusMap = [
@@ -73,17 +72,19 @@ class CaseDetailController: UICollectionViewController, UICollectionViewDelegate
                     // log
                     Analytics.logEvent(AnalyticsParameterSearchTerm, parameters: ["refresh" : "disabled"])
                     let caseRef = ref.child(number!)
-                    let values = ["action": "refresh-existed", "date": CaseDetailController.convertDateToString(date: Date())]
+                    let values = ["action": "refresh-existed", "date": ToolHelper.convertDateToString(date: Date())]
                     caseRef.updateChildValues(values)
                     
-                    self.showToast(message: "Refresh too frequently: To avoid USCIS IP ban, next refresh will be available " + String(Int(12 + caseStat.refreshTime!.timeIntervalSinceNow / 3600)) + " hours later.")
+                    ToolHelper.showToast(view:self.view, message: "Refresh too frequently: To avoid USCIS IP ban, next refresh will be available " + String(Int(12 + caseStat.refreshTime!.timeIntervalSinceNow / 3600)) + " hours later.")
                     return
                 }
                 let caseDetails = caseStat.caseDetails!.split(separator: ":")
                 for caseDetail in caseDetails {
                     let details = caseDetail.split(separator: ",")
-                    caseTypeMap[String(details[0])] = String(details[1])
-                    caseStatusMap[String(details[0])] = String(details[2])
+                    if(details.count == 3) {
+                        caseTypeMap[String(details[0])] = String(details[1])
+                        caseStatusMap[String(details[0])] = String(details[2])
+                    }
                 }
             } else { // count == 0
                 caseStat = CaseStats(context: managedContext)
@@ -100,6 +101,10 @@ class CaseDetailController: UICollectionViewController, UICollectionViewDelegate
         var count = 0
         var sameTypeCount = 0
         DispatchQueue.global(priority: .default).async {
+            DispatchQueue.main.sync {
+                self.navigationItem.rightBarButtonItem?.isEnabled = false
+                self.navigationItem.hidesBackButton = true
+            }
             for i in stride(from: suffixNumber!-self.searchCount-1, to: suffixNumber!, by: 1) {
                 let currentNumber = prefix + String(i)
                 if(self.caseTypeMap.keys.contains(currentNumber) && !(self.caseTypeMap[currentNumber] ?? "").isEmpty && (self.caseTypeMap[currentNumber] != self.type)) {
@@ -128,7 +133,7 @@ class CaseDetailController: UICollectionViewController, UICollectionViewDelegate
             }
             
             let caseRef2 = self.ref.child(self.number!)
-            let values2 = ["action": "refresh-new", "count": String(sameTypeCount), "date": CaseDetailController.convertDateToString(date: Date())]
+            let values2 = ["action": "refresh-new", "count": String(sameTypeCount), "date": ToolHelper.convertDateToString(date: Date())]
             caseRef2.updateChildValues(values2)
             
             // save the info to local
@@ -146,7 +151,7 @@ class CaseDetailController: UICollectionViewController, UICollectionViewDelegate
             }
             
             DispatchQueue.main.sync {
-                var graphDescription = "Last refresh time: " + CaseDetailController.convertDateToString(date: caseStat.refreshTime!)
+                var graphDescription = "Last refresh time: " + ToolHelper.convertDateToString(date: caseStat.refreshTime!)
                 if(diffCountMap.count > 0) {
                     graphDescription += "\n\n"
                     graphDescription += "Status changes after last update:\n"
@@ -156,6 +161,9 @@ class CaseDetailController: UICollectionViewController, UICollectionViewDelegate
                 }
                 // draw the graph
                 self.drawData(caseDetails: detailsString, graphDescription: graphDescription)
+                
+                self.navigationItem.rightBarButtonItem?.isEnabled = true
+                self.navigationItem.hidesBackButton = false
             }
         }
         Analytics.logEvent(AnalyticsParameterSearchTerm, parameters: ["refresh" : "enabled"])
@@ -172,7 +180,7 @@ class CaseDetailController: UICollectionViewController, UICollectionViewDelegate
             if let caseStat = caseStats.first as? CaseStats {
                 print(caseStat.caseDetails)
                 
-                drawData(caseDetails: caseStat.caseDetails ?? "", graphDescription: "Last refresh time:" + CaseDetailController.convertDateToString(date: caseStat.refreshTime!))
+                drawData(caseDetails: caseStat.caseDetails ?? "", graphDescription: "Last refresh time:" + ToolHelper.convertDateToString(date: caseStat.refreshTime!))
             } else {
                 refreshDataFromWeb()
             }
@@ -189,8 +197,6 @@ class CaseDetailController: UICollectionViewController, UICollectionViewDelegate
             + ChartColorTemplates.colorful()
             + ChartColorTemplates.liberty()
             + ChartColorTemplates.pastel()
-            + [UIColor(red: 51/255, green: 181/255, blue: 229/255, alpha: 1)
-        ]
         
         var dataEntries: [PieChartDataEntry] = []
         
@@ -207,7 +213,8 @@ class CaseDetailController: UICollectionViewController, UICollectionViewDelegate
         }
         Analytics.logEvent(AnalyticsEventViewItem, parameters: [type ?? "" : overallCount])
         
-        for (status, count) in statusNumberMap {
+        let statusNumberArray = statusNumberMap.sorted{ $0.key < $1.key}
+        for (status, count) in statusNumberArray {
             let entry = PieChartDataEntry(value: Double(count), label: status + ":" + String(count))
             dataEntries.append(entry)
         }
@@ -242,31 +249,5 @@ class CaseDetailController: UICollectionViewController, UICollectionViewDelegate
         self.view.addSubview(textview)
         
         loadData()
-    }
-    
-    func showToast(message : String) {
-        let toastLabel = UILabel(frame: CGRect(x: self.view.frame.size.width/2 - 150, y: self.view.frame.size.height-150, width: 300, height: 100))
-        toastLabel.backgroundColor = UIColor.black.withAlphaComponent(0.6)
-        toastLabel.textColor = UIColor.white
-        toastLabel.textAlignment = .center;
-        toastLabel.font = UIFont(name: "Montserrat-Light", size: 10.0)
-        toastLabel.text = message
-        toastLabel.alpha = 1.0
-        toastLabel.layer.cornerRadius = 10;
-        toastLabel.clipsToBounds  =  true
-        toastLabel.lineBreakMode = .byWordWrapping
-        toastLabel.numberOfLines = 4
-        
-        self.view.addSubview(toastLabel)
-        UIView.animate(withDuration: 8.0, delay: 0.1, options: .curveEaseOut, animations: {
-            toastLabel.alpha = 0.0
-        }, completion: {(isCompleted) in
-            toastLabel.removeFromSuperview()
-        })
-    }
-    
-    static func convertDateToString(date: Date) -> String {
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return formatter.string(from: date)
     }
 }
