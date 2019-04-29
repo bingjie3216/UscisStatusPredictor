@@ -57,7 +57,41 @@ class CaseDetailController: UICollectionViewController, UICollectionViewDelegate
         return false
     }
     
+    @objc func deleteData() {
+        print("Delete data!")
+        
+        let caseStatsFetchRequest = NSFetchRequest<NSManagedObject>(entityName: "CaseStats")
+        caseStatsFetchRequest.predicate = NSPredicate(format: "mainNumber = %@", number!)
+        if let result = try? managedContext.fetch(caseStatsFetchRequest) {
+            for object in result {
+                managedContext.delete(object)
+            }
+        }
+        
+        let userCasesFetchRequest = NSFetchRequest<NSManagedObject>(entityName: "UserCases")
+        userCasesFetchRequest.predicate = NSPredicate(format: "number = %@", number!)
+        if let result = try? managedContext.fetch(userCasesFetchRequest) {
+            for object in result {
+                managedContext.delete(object)
+            }
+        }
+        
+        do {
+            try self.managedContext.save()
+            print("Saved successfully")
+        } catch let error as NSError {
+            print("Could not save. \(error), \(error.userInfo)")
+        }
+ 
+        navigationController?.popViewController(animated: true)
+    }
+    
     @objc func refreshDataFromWeb() {
+        if((type ?? "").isEmpty) {
+            ToolHelper.showToast(view:self.view, message: "Could not get case details, please check your internet connection, or retry tomorrow if your IP is banned by USCIS website")
+            return
+        }
+        
         let fetchRequest = NSFetchRequest<NSManagedObject>(entityName: "CaseStats")
         fetchRequest.predicate = NSPredicate(format: "mainNumber = %@", number!)
         var caseStat: CaseStats = CaseStats()
@@ -102,10 +136,12 @@ class CaseDetailController: UICollectionViewController, UICollectionViewDelegate
         var sameTypeCount = 0
         DispatchQueue.global(priority: .default).async {
             DispatchQueue.main.sync {
-                self.navigationItem.rightBarButtonItem?.isEnabled = false
+                for barbutton in self.navigationItem.rightBarButtonItems! {
+                    barbutton.isEnabled = false
+                }
                 self.navigationItem.hidesBackButton = true
             }
-            for i in stride(from: suffixNumber!-self.searchCount-1, to: suffixNumber!, by: 1) {
+            for i in stride(from: suffixNumber!-(self.searchCount/2), to: suffixNumber!+(self.searchCount/2), by: 1) {
                 let currentNumber = prefix + String(i)
                 if(self.caseTypeMap.keys.contains(currentNumber) && !(self.caseTypeMap[currentNumber] ?? "").isEmpty && (self.caseTypeMap[currentNumber] != self.type)) {
                     print("not the same type, no download")
@@ -158,11 +194,16 @@ class CaseDetailController: UICollectionViewController, UICollectionViewDelegate
                     for (key, count) in diffCountMap {
                         graphDescription += "  " + key + ": " + String(count) + " entries\n"
                     }
+                } else {
+                    graphDescription += "\n\n"
+                    graphDescription += "No Change since last update."
                 }
                 // draw the graph
                 self.drawData(caseDetails: detailsString, graphDescription: graphDescription)
                 
-                self.navigationItem.rightBarButtonItem?.isEnabled = true
+                for barbutton in self.navigationItem.rightBarButtonItems! {
+                    barbutton.isEnabled = true
+                }
                 self.navigationItem.hidesBackButton = false
             }
         }
@@ -170,6 +211,11 @@ class CaseDetailController: UICollectionViewController, UICollectionViewDelegate
     }
     
     func loadData() {
+        if((type ?? "").isEmpty) {
+            ToolHelper.showToast(view:self.view, message: "Could not get case details, please check your internet connection, or retry tomorrow if your IP is banned by USCIS website")
+            return
+        }
+        
         let fetchRequest = NSFetchRequest<NSManagedObject>(entityName: "CaseStats")
         fetchRequest.predicate = NSPredicate(format: "mainNumber = %@", number!)
         
@@ -178,8 +224,6 @@ class CaseDetailController: UICollectionViewController, UICollectionViewDelegate
             assert(caseStats.count < 2) // we shouldn't have any duplicates in CD
             
             if let caseStat = caseStats.first as? CaseStats {
-                print(caseStat.caseDetails)
-                
                 drawData(caseDetails: caseStat.caseDetails ?? "", graphDescription: "Last refresh time:" + ToolHelper.convertDateToString(date: caseStat.refreshTime!))
             } else {
                 refreshDataFromWeb()
@@ -241,7 +285,8 @@ class CaseDetailController: UICollectionViewController, UICollectionViewDelegate
         
         initPFormatter()
         let refreshBarButton = UIBarButtonItem(barButtonSystemItem: .refresh, target: self, action: #selector(refreshDataFromWeb))
-        self.navigationItem.rightBarButtonItem = refreshBarButton
+        let deleteBarButton = UIBarButtonItem(barButtonSystemItem: .trash, target: self, action: #selector(deleteData))
+        self.navigationItem.rightBarButtonItems = [refreshBarButton, deleteBarButton]
         collectionView?.backgroundColor = UIColor.white
         pieChartView = PieChartView(frame: CGRect(x: 0, y: 100, width: self.view.frame.size.width, height: self.view.frame.size.height-300))
         textview = UITextView(frame: CGRect(x: 0, y: self.view.frame.size.height-200, width: self.view.frame.size.width, height: 200))

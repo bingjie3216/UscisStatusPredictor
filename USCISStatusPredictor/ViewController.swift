@@ -33,7 +33,7 @@ class Case: NSObject {
     }
 }
 
-class CaseController: UICollectionViewController, UICollectionViewDelegateFlowLayout {
+class CaseController: UICollectionViewController, UICollectionViewDelegateFlowLayout, UIGestureRecognizerDelegate {
     private let cellId = "cellId"
     var addCaseAction = UIAlertAction()
     var cases: [NSManagedObject] = []
@@ -103,10 +103,7 @@ class CaseController: UICollectionViewController, UICollectionViewDelegateFlowLa
         collectionView?.alwaysBounceVertical = true
         collectionView?.register(CaseCell.self, forCellWithReuseIdentifier: cellId)
         
-        let textview = UITextView(frame: CGRect(x: 0, y: self.view.frame.size.height-100, width: self.view.frame.size.width, height: 100))
-        textview.text = "Last refresh time: " + ToolHelper.convertDateToString(date: Date())
-        textview.textAlignment = NSTextAlignment.center
-        self.view.addSubview(textview)
+        ToolHelper.showToast(view: self.view, message: "All the Case status were refreshed just now")
     }
     
     override func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
@@ -133,10 +130,6 @@ class CaseController: UICollectionViewController, UICollectionViewDelegateFlowLa
         let layout = UICollectionViewFlowLayout()
         let controller = CaseDetailController(collectionViewLayout: layout)
         let caseType = cases[indexPath.item].value(forKeyPath: "type") as? String
-        if((caseType ?? "").isEmpty) {
-            ToolHelper.showToast(view:self.view, message: "Could not get case details, please check your internet connection, or retry tomorrow if your IP is banned by USCIS website")
-            return
-        }
         controller.number = cases[indexPath.item].value(forKeyPath: "number") as? String
         controller.type = caseType
         navigationController?.pushViewController(controller, animated: true)
@@ -180,6 +173,30 @@ class CaseController: UICollectionViewController, UICollectionViewDelegateFlowLa
         }
         self.updateUseCasesFromStorage()
         self.collectionView?.reloadData()
+    }
+    
+    @objc func handleLongPress(gesture : UILongPressGestureRecognizer!) {
+        if gesture.state != .ended {
+            return
+        }
+        
+        let p = gesture.location(in: self.collectionView)
+        
+        if let indexPath = self.collectionView.indexPathForItem(at: p) {
+            // get the cell at indexPath (the one you long pressed)
+            let cell = self.collectionView.cellForItem(at: indexPath)
+            // do stuff with the cell
+            print("Long press detected")
+        } else {
+            print("couldn't find index path")
+        }
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        if(self.isMovingToParent == false) {
+            self.updateUseCasesFromStorage()
+            self.collectionView?.reloadData()
+        }
     }
 }
 
